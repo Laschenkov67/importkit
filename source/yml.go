@@ -13,10 +13,10 @@ import (
 // Кладёт в RawRecord плоские поля offer: id, available, name, price, vendor,
 // currencyId, categoryId, url, description, picture (через '|' если несколько),
 // param.<NAME> = значение.
+// Source не владеет переданным io.Reader и не закрывает его — это остаётся
+// ответственностью вызывающего кода.
 type YMLSource struct {
 	decoder *xml.Decoder
-	inOffer bool
-	closer  io.Closer
 }
 
 func NewYML() *YMLSource { return &YMLSource{} }
@@ -24,9 +24,6 @@ func NewYML() *YMLSource { return &YMLSource{} }
 func (s *YMLSource) Open(_ context.Context, r io.Reader) error {
 	s.decoder = xml.NewDecoder(r)
 	s.decoder.CharsetReader = identityCharset
-	if c, ok := r.(io.Closer); ok {
-		s.closer = c
-	}
 	return nil
 }
 
@@ -93,9 +90,6 @@ func (s *YMLSource) parseOffer(start xml.StartElement) (RawRecord, error) {
 }
 
 func (s *YMLSource) Close() error {
-	if s.closer != nil {
-		return s.closer.Close()
-	}
 	return nil
 }
 

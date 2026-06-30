@@ -3,25 +3,56 @@ package importkit
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/laschenkov67/importkit/source"
+	"github.com/laschenkov67/importkit/transform"
+	"github.com/laschenkov67/importkit/validate"
 )
 
 // Importer — основной фасад библиотеки.
-// Безопасен для повторного использования: одна сущность Importer
-// может выполнять Import(...) последовательно для разных Reader'ов.
-// Параллельные вызовы Import должны выполняться над разными экземплярами.
+// Importer иммутабелен после New() и безопасен для конкурентного использования:
+// один и тот же экземпляр можно использовать для нескольких одновременных
+// вызовов Import(...) над разными Reader'ами — каждый вызов работает
+// с собственным Source и не разделяет изменяемое состояние с другими.
 type Importer struct {
 	cfg *Config
 }
 
-// New создаёт Importer на основе валидного конфига.
+// New создаёт Importer на основе валидного конфига. Помимо структурной
+// проверки (cfg.Validate), также проверяет, что все имена трансформеров
+// и валидаторов, указанные в маппингах, зарегистрированы — это позволяет
+// поймать опечатку в конфиге сразу, а не на первой строке данных в проде,
+// тем более что при SkipOnError=true такая ошибка иначе осталась бы незамеченной.
 func New(cfg *Config) (*Importer, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	if err := validateRegistries(cfg); err != nil {
+		return nil, err
+	}
 	return &Importer{cfg: cfg}, nil
+}
+
+func validateRegistries(cfg *Config) error {
+	for _, m := range cfg.Mappings {
+		for _, spec := range m.Transform {
+			name, _ := transform.Parse(spec)
+			if _, ok := transform.Get(name); !ok {
+				return fmt.Errorf("%w: field %q: transformer %q not registered",
+					ErrConfigInvalid, m.Target, name)
+			}
+		}
+		for _, spec := range m.Validate {
+			name, _ := validate.Parse(spec)
+			if _, ok := validate.Get(name); !ok {
+				return fmt.Errorf("%w: field %q: validator %q not registered",
+					ErrConfigInvalid, m.Target, name)
+			}
+		}
+	}
+	return nil
 }
 
 // Import запускает потоковый импорт. Канал закрывается после io.EOF
@@ -34,6 +65,7 @@ func (i *Importer) Import(ctx context.Context, r io.Reader) (<-chan Result, erro
 		return nil, err
 	}
 	if err := src.Open(ctx, r); err != nil {
+		_ = src.Close() // освобождаем ресурсы, которые Source мог успеть захватить до ошибки
 		return nil, err
 	}
 
@@ -86,7 +118,7 @@ func (i *Importer) ImportAll(ctx context.Context, r io.Reader) ([]Record, []erro
 	if err != nil {
 		return nil, []error{err}
 	}
-	var recs []Record
+	var recs []Record //nolint:prealloc // итоговый размер заранее неизвестен — он определяется потоком из канала
 	var errs []error
 	for res := range ch {
 		if res.Err != nil {

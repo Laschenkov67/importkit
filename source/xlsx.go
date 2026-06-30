@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
+
+	"github.com/xuri/excelize/v2"
 )
 
 // XLSXSource читает Excel через excelize.
@@ -104,4 +105,3 @@ func (s *XLSXSource) Close() error {
 
 // Hint: для очень больших XLSX (>500MB) предпочтительно подавать *os.File,
 // чтобы excelize мог использовать streaming I/O.
-var _ = os.Open

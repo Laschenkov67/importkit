@@ -3,7 +3,6 @@ package source
 import (
 	"context"
 	"encoding/xml"
-	"fmt"
 	"io"
 	"strings"
 )
@@ -13,9 +12,11 @@ import (
 //
 //	Ид, Артикул, Наименование, Описание, БазоваяЕдиница,
 //	Группы.Ид (через '|'), ЗначенияСвойств.<Ид>, Картинка (через '|').
+//
+// Source не владеет переданным io.Reader и не закрывает его — это остаётся
+// ответственностью вызывающего кода.
 type OneCSource struct {
 	decoder *xml.Decoder
-	closer  io.Closer
 }
 
 func NewOneC() *OneCSource { return &OneCSource{} }
@@ -23,9 +24,6 @@ func NewOneC() *OneCSource { return &OneCSource{} }
 func (s *OneCSource) Open(_ context.Context, r io.Reader) error {
 	s.decoder = xml.NewDecoder(r)
 	s.decoder.CharsetReader = identityCharset
-	if c, ok := r.(io.Closer); ok {
-		s.closer = c
-	}
 	return nil
 }
 
@@ -82,18 +80,23 @@ func (s *OneCSource) parseProduct() (RawRecord, error) {
 		case xml.EndElement:
 			val := strings.TrimSpace(sb.String())
 			name := t.Name.Local
+			parent := ""
+			if len(path) >= 2 {
+				parent = path[len(path)-2]
+			}
 			// Внутри <ЗначенияСвойства> структура: Ид + Значение.
-			if name == "Ид" && len(path) >= 2 && path[len(path)-2] == "ЗначенияСвойства" {
+			switch {
+			case name == "Ид" && parent == "ЗначенияСвойства":
 				propID = val
-			} else if name == "Значение" && len(path) >= 2 && path[len(path)-2] == "ЗначенияСвойства" {
+			case name == "Значение" && parent == "ЗначенияСвойства":
 				if propID != "" {
 					appendVal("ЗначенияСвойств."+propID, val)
 				}
-			} else if name == "Ид" && len(path) >= 2 && path[len(path)-2] == "Группы" {
+			case name == "Ид" && parent == "Группы":
 				appendVal("Группы.Ид", val)
-			} else if name == "Картинка" {
+			case name == "Картинка":
 				appendVal("Картинка", val)
-			} else if val != "" {
+			case val != "":
 				appendVal(name, val)
 			}
 			if len(path) > 0 {
@@ -107,10 +110,5 @@ func (s *OneCSource) parseProduct() (RawRecord, error) {
 }
 
 func (s *OneCSource) Close() error {
-	if s.closer != nil {
-		return s.closer.Close()
-	}
 	return nil
 }
-
-var _ = fmt.Sprintf

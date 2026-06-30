@@ -10,23 +10,21 @@ import (
 
 // XMLSource — стрим-парсер XML. ItemElement — имя элемента-«записи».
 // Дочерние элементы становятся ключами RawRecord (атрибуты — с префиксом "@").
+// Source не владеет переданным io.Reader и не закрывает его — это остаётся
+// ответственностью вызывающего кода.
 type XMLSource struct {
 	ItemElement string
 
 	decoder *xml.Decoder
-	closer  io.Closer
 }
 
 func NewXML(item string) *XMLSource { return &XMLSource{ItemElement: item} }
 
 func (s *XMLSource) Open(_ context.Context, r io.Reader) error {
-	s.decoder = xml.NewDecoder(r)
-	if c, ok := r.(io.Closer); ok {
-		s.closer = c
-	}
 	if s.ItemElement == "" {
 		return fmt.Errorf("xml: ItemElement required")
 	}
+	s.decoder = xml.NewDecoder(r)
 	return nil
 }
 
@@ -78,7 +76,7 @@ func (s *XMLSource) decodeItem(start xml.StartElement) (RawRecord, error) {
 				val := strings.TrimSpace(sb.String())
 				if val != "" {
 					if existing, ok := out[key]; ok {
-						out[key] = existing.(string) + "|" + val
+						out[key] = existing + "|" + val
 					} else {
 						out[key] = val
 					}
@@ -91,20 +89,9 @@ func (s *XMLSource) decodeItem(start xml.StartElement) (RawRecord, error) {
 			sb.Write(t)
 		}
 	}
-	// Cast в map[string]string: XML значения у нас всегда строки.
-	final := make(RawRecord, len(out))
-	for k, v := range out {
-		switch x := v.(type) {
-		case string:
-			final[k] = x
-		}
-	}
-	return final, nil
+	return out, nil
 }
 
 func (s *XMLSource) Close() error {
-	if s.closer != nil {
-		return s.closer.Close()
-	}
 	return nil
 }

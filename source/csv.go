@@ -8,13 +8,14 @@ import (
 )
 
 // CSVSource — реализация Source для RFC 4180 CSV с произвольным разделителем.
+// Source не владеет переданным io.Reader и не закрывает его — это остаётся
+// ответственностью вызывающего кода.
 type CSVSource struct {
 	Delimiter rune
 	HasHeader bool
 
 	reader  *csv.Reader
 	headers []string
-	closer  io.Closer
 }
 
 // NewCSV создаёт CSV-источник. delim — например ',' или ';'.
@@ -30,9 +31,6 @@ func (s *CSVSource) Open(_ context.Context, r io.Reader) error {
 	s.reader.Comma = s.Delimiter
 	s.reader.LazyQuotes = true
 	s.reader.FieldsPerRecord = -1
-	if c, ok := r.(io.Closer); ok {
-		s.closer = c
-	}
 	if s.HasHeader {
 		h, err := s.reader.Read()
 		if err != nil {
@@ -63,8 +61,5 @@ func (s *CSVSource) Next(ctx context.Context) (RawRecord, error) {
 }
 
 func (s *CSVSource) Close() error {
-	if s.closer != nil {
-		return s.closer.Close()
-	}
 	return nil
 }

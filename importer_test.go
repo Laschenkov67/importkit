@@ -53,7 +53,9 @@ func TestCSV_RequiredFieldMissing(t *testing.T) {
 		},
 	}
 	imp, _ := importkit.New(cfg)
-	_, errs := imp.ImportAll(context.Background(), strings.NewReader("id\n\n"))
+	// encoding/csv пропускает полностью пустые строки, поэтому используем
+	// дополнительную колонку, чтобы строка не была пустой, а id — пустым.
+	_, errs := imp.ImportAll(context.Background(), strings.NewReader("id,extra\n,present\n"))
 	if len(errs) == 0 {
 		t.Fatal("expected required error")
 	}

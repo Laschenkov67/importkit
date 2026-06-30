@@ -20,7 +20,7 @@ func Int(v any) (int64, error) {
 	case int64:
 		return x, nil
 	case int:
-		return int64(x), nil
+		return int64(x), nil //nolint:gosec // int always fits in int64, widening conversion is safe
 	case float64:
 		return int64(x), nil
 	case string:
@@ -66,18 +66,25 @@ func Bool(v any) (bool, error) {
 	return false, fmt.Errorf("coerce: cannot convert %v to bool", v)
 }
 
-// Date парсит дату; layout пуст → пробуем RFC3339, потом 02.01.2006 и 2006-01-02.
+// Date парсит дату. Если layout задан явно — используется только он
+// (чтобы не подменить формат и не получить неверную дату из-за случайного
+// совпадения с другим layout'ом). Если layout пуст — пробуем по очереди
+// RFC3339, 2006-01-02, 02.01.2006, 02/01/2006.
 func Date(v any, layout string) (time.Time, error) {
 	s, ok := v.(string)
 	if !ok {
 		return time.Time{}, fmt.Errorf("coerce: date expects string, got %T", v)
 	}
 	s = strings.TrimSpace(s)
-	layouts := []string{layout, time.RFC3339, "2006-01-02", "02.01.2006", "02/01/2006"}
-	for _, l := range layouts {
-		if l == "" {
-			continue
+	if layout != "" {
+		t, err := time.Parse(layout, s)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("coerce: cannot parse date %q with layout %q: %w", s, layout, err)
 		}
+		return t, nil
+	}
+	layouts := []string{time.RFC3339, "2006-01-02", "02.01.2006", "02/01/2006"}
+	for _, l := range layouts {
 		if t, err := time.Parse(l, s); err == nil {
 			return t, nil
 		}

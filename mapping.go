@@ -17,11 +17,12 @@ func (i *Importer) mapRecord(row int, raw source.RawRecord) (Record, error) {
 		rawVal, ok := raw[m.Source]
 		var value any = rawVal
 		if !ok || rawVal == "" {
-			if m.Default != nil {
+			switch {
+			case m.Default != nil:
 				value = m.Default
-			} else if m.Required {
+			case m.Required:
 				return nil, &RowError{Row: row, Field: m.Source, Err: ErrFieldRequired}
-			} else {
+			default:
 				continue
 			}
 		}
